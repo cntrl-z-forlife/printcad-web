@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>printcad demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 1rem; }
+    input, button { font-size: 1rem; padding: 0.5rem; margin: 0.25rem 0; }
+    .hidden { display: none; }
+    .error { color: #b00; }
+  </style>
+</head>
+<body>
+  <h1>printcad demo</h1>
+  <p>Password-protected landing for the interactive text-to-STEP demo.</p>
+
+  <div id="gate">
+    <label>Password<br>
+      <input type="password" id="pw" autofocus />
+    </label><br>
+    <button id="enter">Enter</button>
+    <p id="err" class="error"></p>
+  </div>
+
+  <div id="content" class="hidden">
+    <p>Authenticated.</p>
+    <p>The full agent + build123d demo runs on Streamlit Community Cloud (deployed from this private GitHub repo).</p>
+    <p><a id="demo-link" href="https://YOUR-STREAMLIT-APP.streamlit.app" target="_blank" rel="noopener">Open the demo</a></p>
+    <p><small>Edit the link above in <code>docs/index.html</code> after you deploy.</small></p>
+  </div>
+
+  <script>
+    // Change this hash if you want a different password.
+    // Current password: "demo"  (SHA-256)
+    const EXPECTED = "2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea";
+
+    async function sha256(text) {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+      return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    document.getElementById("enter").onclick = async () => {
+      const pw = document.getElementById("pw").value;
+      const hash = await sha256(pw);
+      if (hash === EXPECTED) {
+        document.getElementById("gate").classList.add("hidden");
+        document.getElementById("content").classList.remove("hidden");
+        sessionStorage.setItem("printcad-ok", "1");
+      } else {
+        document.getElementById("err").textContent = "Incorrect password";
+      }
+    };
+
+    // Restore if already passed this session
+    if (sessionStorage.getItem("printcad-ok") === "1") {
+      document.getElementById("gate").classList.add("hidden");
+      document.getElementById("content").classList.remove("hidden");
+    }
+
+    document.getElementById("pw").addEventListener("keydown", e => {
+      if (e.key === "Enter") document.getElementById("enter").click();
+    });
+  </script>
+</body>
+</html>

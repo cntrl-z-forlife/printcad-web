@@ -197,13 +197,12 @@ async function initPyodide() {
     status.textContent = "Loading micropip…";
     await pyodide.loadPackage("micropip");
     status.textContent = "Installing OCP.wasm + build123d (may take a minute)…";
-    // Direct wheel install — bootstrap tries a PyPI package that has no matching pure-Python/WASM wheel for 0.29
+    // 7.8.1.2 WASM wheel matches build123d 0.10.x (cadquery-ocp>=7.8,<7.9).
+    // Newer build123d wants cadquery-ocp-novtk>=8.0, but only a 7.9.3 WASM wheel exists.
     await pyodide.runPythonAsync(`
 import micropip
-# cp313 / 2025 ABI wheel from the OCP.wasm registry
-await micropip.install("https://yeicor.github.io/OCP.wasm/cadquery-ocp-novtk/cadquery_ocp_novtk-7.9.3.0-cp313-cp313-pyemscripten_2025_0_wasm32.whl")
-# pure-Python build123d
-await micropip.install("build123d")
+await micropip.install("https://yeicor.github.io/OCP.wasm/cadquery-ocp/cadquery_ocp-7.8.1.2-cp313-cp313-pyodide_2025_0_wasm32.whl")
+await micropip.install("build123d==0.10.0")
 `);
     status.textContent = "CAD engine ready";
     document.getElementById("runBtn").disabled = false;

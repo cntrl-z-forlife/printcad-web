@@ -22,7 +22,17 @@
       <input type="password" id="apiKey" placeholder="sk-or-v1-..." autocomplete="off" />
     </label>
     <label>Model<br>
-      <input type="text" id="model" value="openrouter/free" />
+      <select id="modelSelect">
+        <option value="nvidia/nemotron-3-ultra-550b-a55b:free">Nemotron 3 Ultra 550B (free)</option>
+        <option value="nvidia/nemotron-3-super-120b-a12b:free">Nemotron 3 Super 120B (free)</option>
+        <option value="cohere/north-mini-code:free">North Mini Code (free)</option>
+        <option value="poolside/laguna-s-2.1:free">Laguna S 2.1 (free)</option>
+        <option value="google/gemma-4-31b-it:free">Gemma 4 31B (free)</option>
+        <option value="minimax/minimax-m3.1-flash:free">MiniMax M3.1 Flash (free)</option>
+        <option value="openrouter/free" selected>openrouter/free (any free)</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <input type="text" id="model" value="openrouter/free" style="margin-top:0.4rem;" />
     </label>
     <button id="initBtn">Initialize CAD engine</button>
     <span id="initStatus">Not loaded</span>
@@ -65,6 +75,6 @@
     </details>
   </section>
 
-  <script src="app.js?v=20261020-ask2"></script>
+  <script src="app.js?v=20261020-models1"></script>
 </body>
 </html>

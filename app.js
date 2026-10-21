@@ -222,6 +222,23 @@ await micropip.install("https://yeicor.github.io/OCP.wasm/lib3mf/lib3mf-2.4.1-cp
 # Alias used by some build123d versions
 micropip.add_mock_package("py-lib3mf", "2.4.1", modules={"py_lib3mf": "from lib3mf import *"})
 await micropip.install("build123d==0.10.0", keep_going=True)
+# Smoke-test the import so we see the real failure immediately
+import sys, types, traceback
+if "OCP.collections" not in sys.modules:
+    try:
+        import OCP
+        coll = types.ModuleType("OCP.collections")
+        sys.modules["OCP.collections"] = coll
+        OCP.collections = coll
+    except Exception as e:
+        print("stub failed", e)
+try:
+    import build123d
+    print("build123d import ok", build123d.__version__)
+except Exception:
+    print("BUILD123D IMPORT FAILED:")
+    print(traceback.format_exc())
+    raise
 `);
     status.textContent = "CAD engine ready";
     document.getElementById("runBtn").disabled = false;
@@ -574,7 +591,7 @@ async function runAgent(userText, mode) {
       log(`  tool ${name}(${JSON.stringify(args).slice(0, 120)})`);
       const result = await dispatch(name, args);
       if (name === "run_model" || name === "inspect") {
-        log("  → " + String(result).slice(0, 300));
+        log("  → " + String(result).slice(0, 1200));
       }
       messages.push({
         role: "tool",
@@ -662,6 +679,15 @@ function renderMesh({ verts, tris }) {
   animate();
 }
 
+document.getElementById("modelSelect").onchange = (e) => {
+  const sel = e.target.value;
+  const input = document.getElementById("model");
+  if (sel === "custom") {
+    input.focus();
+  } else {
+    input.value = sel;
+  }
+};
 document.getElementById("initBtn").onclick = initPyodide;
 document.getElementById("runBtn").onclick = () => {
   const prompt = document.getElementById("prompt").value.trim();

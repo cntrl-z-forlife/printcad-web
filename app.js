@@ -197,12 +197,17 @@ async function initPyodide() {
     status.textContent = "Loading micropip…";
     await pyodide.loadPackage("micropip");
     status.textContent = "Installing OCP.wasm + build123d (may take a minute)…";
-    // 7.8.1.2 WASM wheel matches build123d 0.10.x (cadquery-ocp>=7.8,<7.9).
-    // Newer build123d wants cadquery-ocp-novtk>=8.0, but only a 7.9.3 WASM wheel exists.
+    // Pin to versions that have matching WASM wheels.
+    // build123d 0.10.0 wants cadquery-ocp>=7.8,<7.9 and lib3mf>=2.4.1.
     await pyodide.runPythonAsync(`
 import micropip
+# OCP (VTK-enabled, but fine in WASM)
 await micropip.install("https://yeicor.github.io/OCP.wasm/cadquery-ocp/cadquery_ocp-7.8.1.2-cp313-cp313-pyodide_2025_0_wasm32.whl")
-await micropip.install("build123d==0.10.0")
+# lib3mf WASM wheel (satisfies lib3mf>=2.4.1)
+await micropip.install("https://yeicor.github.io/OCP.wasm/lib3mf/lib3mf-2.4.1-cp313-cp313-pyodide_2025_0_wasm32.whl")
+# Alias used by some build123d versions
+micropip.add_mock_package("py-lib3mf", "2.4.1", modules={"py_lib3mf": "from lib3mf import *"})
+await micropip.install("build123d==0.10.0", keep_going=True)
 `);
     status.textContent = "CAD engine ready";
     document.getElementById("runBtn").disabled = false;

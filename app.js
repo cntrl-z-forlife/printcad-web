@@ -341,6 +341,17 @@ if "ocp_gordon" not in sys.modules:
         gordon.interpolate_curve_network_debug = _g
         sys.modules["ocp_gordon"] = gordon
 params = user_params
+# JsProxy is not subscriptable — convert to a plain dict
+if not isinstance(params, dict):
+    try:
+        params = dict(params)
+    except Exception:
+        try:
+            params = {k: params[k] for k in params.keys()}
+        except Exception as e:
+            raise RuntimeError("could not convert params to dict: " + str(e))
+# Coerce numbers that came through as JS numbers
+params = {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in params.items()}
 ns = {"__name__": "__main__"}
 try:
     exec(user_code, ns)
@@ -371,11 +382,22 @@ try:
 except Exception:
     pass
 from build123d import export_step
-buf = io.BytesIO()
-ok = export_step(solid, buf)
-if ok is False:
-    raise RuntimeError("export_step failed")
-step_bytes = buf.getvalue()
+import tempfile, os
+fd, path = tempfile.mkstemp(suffix=".step")
+os.close(fd)
+try:
+    ok = export_step(solid, path)
+    if ok is False:
+        raise RuntimeError("export_step failed")
+    with open(path, "rb") as f:
+        step_bytes = f.read()
+finally:
+    try:
+        os.remove(path)
+    except Exception:
+        pass
+if not step_bytes:
+    raise RuntimeError("export_step produced empty file")
 verts, tris = [], []
 tess_err = None
 try:

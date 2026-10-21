@@ -222,19 +222,48 @@ await micropip.install("https://yeicor.github.io/OCP.wasm/lib3mf/lib3mf-2.4.1-cp
 # Alias used by some build123d versions
 micropip.add_mock_package("py-lib3mf", "2.4.1", modules={"py_lib3mf": "from lib3mf import *"})
 await micropip.install("build123d==0.10.0", keep_going=True)
-# Smoke-test the import so we see the real failure immediately
+# Smoke-test + compatibility shims for OCP 7.8 (no OCP.collections, ocp_gordon wants new names)
 import sys, types, traceback
-if "OCP.collections" not in sys.modules:
+try:
+    import OCP
+    coll = types.ModuleType("OCP.collections")
+    # Map common new names to old TCol* classes that exist in 7.8
     try:
-        import OCP
-        coll = types.ModuleType("OCP.collections")
-        sys.modules["OCP.collections"] = coll
-        OCP.collections = coll
+        from OCP.TColgp import TColgp_Array1OfPnt as Array1_gp_Pnt
+        from OCP.TColgp import TColgp_Array1OfVec as Array1_gp_Vec
+        from OCP.TColgp import TColgp_Array1OfPnt2d as Array1_gp_Pnt2d
+        from OCP.TColgp import TColgp_HArray1OfPnt as HArray1_gp_Pnt
+        coll.Array1_gp_Pnt = Array1_gp_Pnt
+        coll.Array1_gp_Vec = Array1_gp_Vec
+        coll.Array1_gp_Pnt2d = Array1_gp_Pnt2d
+        coll.HArray1_gp_Pnt = HArray1_gp_Pnt
     except Exception as e:
-        print("stub failed", e)
+        print("partial TColgp map", e)
+    try:
+        from OCP.TColStd import TColStd_Array1OfReal as Array1_Standard_Real
+        from OCP.TColStd import TColStd_Array1OfInteger as Array1_Standard_Integer
+        coll.Array1_Standard_Real = Array1_Standard_Real
+        coll.Array1_Standard_Integer = Array1_Standard_Integer
+    except Exception as e:
+        print("partial TColStd map", e)
+    sys.modules["OCP.collections"] = coll
+    OCP.collections = coll
+except Exception as e:
+    print("collections stub failed", e)
+# If gordon still can't import, replace it with a stub so basic solids work
+try:
+    import ocp_gordon
+except Exception:
+    gordon = types.ModuleType("ocp_gordon")
+    def _gordon_stub(*a, **k):
+        raise NotImplementedError("ocp_gordon not available in this WASM build (curve networks disabled)")
+    gordon.interpolate_curve_network = _gordon_stub
+    gordon.interpolate_curve_network_debug = _gordon_stub
+    sys.modules["ocp_gordon"] = gordon
+    print("ocp_gordon stubbed")
 try:
     import build123d
-    print("build123d import ok", build123d.__version__)
+    print("build123d import ok", getattr(build123d, "__version__", "?"))
 except Exception:
     print("BUILD123D IMPORT FAILED:")
     print(traceback.format_exc())
@@ -287,15 +316,30 @@ async function runModelInPyodide() {
   pyodide.globals.set("user_code", session.modelCode);
   const py = `
 import json, io, traceback, sys, types
-# Stub missing OCP.collections so older WASM OCP doesn't crash imports
+# Ensure OCP.collections stub and ocp_gordon stub are in place
 if "OCP.collections" not in sys.modules:
     try:
         import OCP
         coll = types.ModuleType("OCP.collections")
+        try:
+            from OCP.TColgp import TColgp_Array1OfPnt as Array1_gp_Pnt
+            coll.Array1_gp_Pnt = Array1_gp_Pnt
+        except Exception:
+            pass
         sys.modules["OCP.collections"] = coll
         OCP.collections = coll
     except Exception:
         pass
+if "ocp_gordon" not in sys.modules:
+    try:
+        import ocp_gordon
+    except Exception:
+        gordon = types.ModuleType("ocp_gordon")
+        def _g(*a, **k):
+            raise NotImplementedError("ocp_gordon unavailable")
+        gordon.interpolate_curve_network = _g
+        gordon.interpolate_curve_network_debug = _g
+        sys.modules["ocp_gordon"] = gordon
 params = user_params
 ns = {"__name__": "__main__"}
 try:

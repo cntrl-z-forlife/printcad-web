@@ -12,8 +12,8 @@ Workflow for a NEW part:
 5. write_model
 6. run_model
 7. inspect
-8. If inspect fails, apply_patch or rewrite and run again
-9. finish — list assumptions. ok=false if inspect failed.
+8. If inspect or run_model fails, apply_patch or rewrite model.py and run_model again. Do not finish until you have tried at least one fix.
+9. finish — list assumptions. ok=false only if you still cannot produce a valid STEP after fixing.
 
 Workflow for a SECOND TAKE / edit:
 - Dimensional change only → set_params (merge) then run_model then inspect
@@ -269,19 +269,28 @@ async function runModelInPyodide() {
   pyodide.globals.set("user_params", session.params);
   pyodide.globals.set("user_code", session.modelCode);
   const py = `
-import json, io, traceback
+import json, io, traceback, sys, types
+# Stub missing OCP.collections so older WASM OCP doesn't crash imports
+if "OCP.collections" not in sys.modules:
+    try:
+        import OCP
+        coll = types.ModuleType("OCP.collections")
+        sys.modules["OCP.collections"] = coll
+        OCP.collections = coll
+    except Exception:
+        pass
 params = user_params
-ns = {}
+ns = {"__name__": "__main__"}
 try:
     exec(user_code, ns)
 except Exception as e:
-    raise RuntimeError("exec failed: " + str(e))
+    raise RuntimeError("exec failed: " + str(e) + "\\n" + traceback.format_exc())
 if "build" not in ns:
     raise RuntimeError("model.py must define build(params)")
 try:
     solid = ns["build"](params)
 except Exception as e:
-    raise RuntimeError("build() failed: " + str(e))
+    raise RuntimeError("build() failed: " + str(e) + "\\n" + traceback.format_exc())
 if solid is None:
     raise RuntimeError("build returned None")
 solid = getattr(solid, "part", solid)
@@ -316,7 +325,6 @@ try:
         tess_err = "tessellate returned empty mesh"
 except Exception as e:
     tess_err = str(e)
-    # Fallback: try coarser tolerance
     try:
         raw = solid.tessellate(1.0)
         verts = [(float(v.X), float(v.Y), float(v.Z)) for v in raw[0]]
@@ -358,11 +366,29 @@ json.dumps(result)
 
 function normalizeQuestions(args) {
   const out = [];
-  const raw = args.questions || args.question || args.q || [];
+  let raw = args.questions || args.question || args.q || [];
+  // Models often stringify the array
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+      try { raw = JSON.parse(trimmed); } catch {}
+    }
+  }
   const list = Array.isArray(raw) ? raw : [raw];
   for (const item of list) {
     if (!item) continue;
     if (typeof item === "string") {
+      // Nested stringified list
+      const t = item.trim();
+      if (t.startsWith("[") || t.startsWith("{")) {
+        try {
+          const parsed = JSON.parse(t);
+          if (Array.isArray(parsed)) {
+            out.push(...normalizeQuestions({ questions: parsed }));
+            continue;
+          }
+        } catch {}
+      }
       out.push({ id: String(out.length), text: item });
     } else if (typeof item === "object") {
       const text = item.question || item.text || item.q || item.prompt || JSON.stringify(item);
@@ -547,6 +573,9 @@ async function runAgent(userText, mode) {
       try { args = JSON.parse(call.function.arguments || "{}"); } catch {}
       log(`  tool ${name}(${JSON.stringify(args).slice(0, 120)})`);
       const result = await dispatch(name, args);
+      if (name === "run_model" || name === "inspect") {
+        log("  → " + String(result).slice(0, 300));
+      }
       messages.push({
         role: "tool",
         tool_call_id: call.id,

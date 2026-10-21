@@ -10,7 +10,7 @@ Everything runs client-side:
 - Three.js preview of the tessellated solid
 - STEP download
 
-No server, no password, no shared API key. Suitable for GitHub Pages.
+
 
 ## Run locally
 
@@ -25,9 +25,6 @@ python -m http.server 8000
 3. Describe a part and click Generate.
 4. Second-take edits reuse the same session (params + model.py).
 
-## Deploy to GitHub Pages
-
-Push this repo (public or private). In Settings → Pages, set source to the root of `main`. The site will be served at `https://<user>.github.io/<repo>/`.
 
 ## What is still Python
 
@@ -41,4 +38,4 @@ Only the generated `model.py` and the one-time execution of it inside Pyodide. T
 - Browser CORS and OpenRouter rate limits apply.
 - Not a full replacement for the CLI’s multi-model fallback and strict linting.
 
-The original Streamlit `app.py` remains for a server-side option if you prefer it.
+

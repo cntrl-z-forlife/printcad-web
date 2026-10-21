@@ -293,18 +293,31 @@ if ok is False:
     raise RuntimeError("export_step failed")
 step_bytes = buf.getvalue()
 verts, tris = [], []
+tess_err = None
 try:
     raw = solid.tessellate(0.5)
     verts = [(float(v.X), float(v.Y), float(v.Z)) for v in raw[0]]
     tris = [tuple(int(i) for i in tri) for tri in raw[1]]
-except Exception:
-    pass
+    if not verts:
+        tess_err = "tessellate returned empty mesh"
+except Exception as e:
+    tess_err = str(e)
+    # Fallback: try coarser tolerance
+    try:
+        raw = solid.tessellate(1.0)
+        verts = [(float(v.X), float(v.Y), float(v.Z)) for v in raw[0]]
+        tris = [tuple(int(i) for i in tri) for tri in raw[1]]
+        if verts:
+            tess_err = None
+    except Exception as e2:
+        tess_err = f"{tess_err}; fallback: {e2}"
 import base64
 result = {
     "ok": True,
     "step_b64": base64.b64encode(step_bytes).decode(),
     "verts": verts,
     "tris": tris,
+    "tess_err": tess_err,
 }
 json.dumps(result)
 `;
@@ -313,11 +326,12 @@ json.dumps(result)
     const data = JSON.parse(raw);
     session.stepBytes = Uint8Array.from(atob(data.step_b64), c => c.charCodeAt(0));
     session.mesh = { verts: data.verts || [], tris: data.tris || [] };
+    session.tessErr = data.tess_err || null;
     const report = {
       ok: true,
       n_verts: data.verts?.length || 0,
       n_tris: data.tris?.length || 0,
-      errors: [],
+      errors: data.tess_err ? ["preview: " + data.tess_err] : [],
     };
     session.report = report;
     return JSON.stringify(report);
@@ -473,34 +487,46 @@ function updateUI() {
     downloads.appendChild(a);
   }
   document.getElementById("preview-area").classList.remove("hidden");
-  if (session.mesh && session.mesh.verts.length) {
+  const viewer = document.getElementById("viewer");
+  if (session.mesh && session.mesh.verts && session.mesh.verts.length) {
+    log(`Preview: ${session.mesh.verts.length} verts, ${session.mesh.tris.length} tris`);
     renderMesh(session.mesh);
+  } else {
+    viewer.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;padding:1rem;text-align:center;">No mesh produced.<br>${session.tessErr || "tessellation returned empty"}</div>`;
+    if (session.tessErr) log("Preview failed: " + session.tessErr);
   }
 }
 
 function renderMesh({ verts, tris }) {
   const container = document.getElementById("viewer");
   container.innerHTML = "";
+  // Force layout so clientWidth/Height are non-zero
+  container.style.display = "block";
+  const w = container.clientWidth || 640;
+  const h = container.clientHeight || 480;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xe8e4dc);
-  const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 10000);
+  const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 10000);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setSize(w, h);
   container.appendChild(renderer.domElement);
   const geometry = new THREE.BufferGeometry();
   const positions = [];
   for (const tri of tris) {
     for (const idx of tri) {
       const v = verts[idx];
-      positions.push(v[0], v[1], v[2]);
+      if (v && v.length >= 3) positions.push(v[0], v[1], v[2]);
     }
+  }
+  if (!positions.length) {
+    container.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#666;">Mesh data empty after conversion</div>`;
+    return;
   }
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.computeVertexNormals();
   const material = new THREE.MeshStandardMaterial({ color: 0x88aaee, metalness: 0.1, roughness: 0.7, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geometry, material);
   scene.add(mesh);
-  // Center camera
   geometry.computeBoundingSphere();
   const center = geometry.boundingSphere.center;
   const radius = geometry.boundingSphere.radius || 50;

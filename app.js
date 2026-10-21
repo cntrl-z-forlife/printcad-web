@@ -6,7 +6,7 @@ Units are millimeters. Never invent inches.
 
 Workflow for a NEW part:
 1. If the user named a product (phone, console, camera), call lookup_device.
-2. If required sizes are missing, call ask_user once (assume defaults if needed). Then keep modeling.
+2. If required sizes or choices are missing, call ask_user once with short clear questions. The page will show a form and wait. Do not invent critical dimensions. After you receive the answers, continue modeling.
 3. set_spec
 4. set_params with every dimension named
 5. write_model
@@ -130,14 +130,28 @@ const TOOLS = [
     type: "function",
     function: {
       name: "ask_user",
-      description: "Ask clarifying questions. In this demo defaults are applied.",
+      description: "Ask the human clarifying questions when required dimensions or choices are missing. Call this with a list of short questions. The UI will pause and show a form. Do not invent critical sizes if you can ask instead. You may also pass optional default assumptions the user can accept.",
       parameters: {
         type: "object",
         properties: {
-          questions: { type: "array", items: { type: "string" } },
-          assumptions: { type: "array", items: { type: "string" } },
+          questions: {
+            type: "array",
+            description: "List of questions. Each item can be a plain string or an object with a question/text field.",
+            items: {
+              anyOf: [
+                { type: "string" },
+                { type: "object", properties: { question: { type: "string" }, text: { type: "string" }, id: { type: "string" } } },
+              ],
+            },
+          },
+          question: { type: "string", description: "Single question alternative if you cannot produce an array." },
+          assumptions: {
+            type: "array",
+            description: "Optional default assumptions the user may accept instead of answering.",
+            items: { type: "string" },
+          },
         },
-        required: ["questions"],
+        required: [],
       },
     },
   },
@@ -342,6 +356,85 @@ json.dumps(result)
   }
 }
 
+function normalizeQuestions(args) {
+  const out = [];
+  const raw = args.questions || args.question || args.q || [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  for (const item of list) {
+    if (!item) continue;
+    if (typeof item === "string") {
+      out.push({ id: String(out.length), text: item });
+    } else if (typeof item === "object") {
+      const text = item.question || item.text || item.q || item.prompt || JSON.stringify(item);
+      out.push({ id: item.id || String(out.length), text });
+    }
+  }
+  if (!out.length && typeof args.question === "string") {
+    out.push({ id: "0", text: args.question });
+  }
+  return out;
+}
+
+function presentAskUser(args) {
+  return new Promise((resolve) => {
+    const questions = normalizeQuestions(args);
+    const assumptions = Array.isArray(args.assumptions) ? args.assumptions : [];
+    const area = document.getElementById("ask-area");
+    const form = document.getElementById("askForm");
+    const assumEl = document.getElementById("askAssumptions");
+    form.innerHTML = "";
+    if (!questions.length) {
+      // Dumb model called it with nothing useful — treat as skip
+      resolve(JSON.stringify({ status: "no_questions", answers: {}, assumptions }));
+      return;
+    }
+    assumEl.textContent = assumptions.length
+      ? "Suggested defaults: " + assumptions.join("; ")
+      : "";
+    questions.forEach((q, i) => {
+      const wrap = document.createElement("div");
+      wrap.className = "ask-q";
+      const label = document.createElement("label");
+      label.htmlFor = "ask_" + i;
+      label.textContent = q.text;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = "ask_" + i;
+      input.dataset.qid = q.id;
+      input.placeholder = "your answer";
+      wrap.appendChild(label);
+      wrap.appendChild(document.createElement("br"));
+      wrap.appendChild(input);
+      form.appendChild(wrap);
+    });
+    area.classList.remove("hidden");
+    area.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    log("Waiting for your answers…");
+
+    const submit = document.getElementById("askSubmit");
+    const defaultsBtn = document.getElementById("askDefaults");
+    const cleanup = () => {
+      area.classList.add("hidden");
+      submit.onclick = null;
+      defaultsBtn.onclick = null;
+    };
+    submit.onclick = () => {
+      const answers = {};
+      form.querySelectorAll("input").forEach((inp) => {
+        answers[inp.dataset.qid] = inp.value.trim();
+      });
+      cleanup();
+      log("Answers received.");
+      resolve(JSON.stringify({ status: "answered", answers, assumptions }));
+    };
+    defaultsBtn.onclick = () => {
+      cleanup();
+      log("Using defaults / skipped.");
+      resolve(JSON.stringify({ status: "defaults_accepted", answers: {}, assumptions }));
+    };
+  });
+}
+
 async function dispatch(name, args) {
   try {
     if (name === "set_spec") {
@@ -375,11 +468,7 @@ async function dispatch(name, args) {
       return JSON.stringify(lookupDevice(args.query || ""));
     }
     if (name === "ask_user") {
-      return JSON.stringify({
-        status: "defaults_applied",
-        assumptions: args.assumptions || [],
-        answers: {},
-      });
+      return await presentAskUser(args);
     }
     if (name === "finish") {
       session.finished = true;

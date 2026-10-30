@@ -311,8 +311,8 @@ function caseParams(device, wall = 2.0, clearance = 0.4, lip = 1.2) {
 async function runModelInPyodide() {
   if (!pyodide) throw new Error("CAD engine not initialized");
   if (!session.modelCode) throw new Error("no model.py");
-  // Pass data safely
-  pyodide.globals.set("user_params", session.params);
+  // Pass data as JSON strings so Python gets plain objects, not JsProxies
+  pyodide.globals.set("user_params_json", JSON.stringify(session.params || {}));
   pyodide.globals.set("user_code", session.modelCode);
   const py = `
 import json, io, traceback, sys, types
@@ -340,17 +340,8 @@ if "ocp_gordon" not in sys.modules:
         gordon.interpolate_curve_network = _g
         gordon.interpolate_curve_network_debug = _g
         sys.modules["ocp_gordon"] = gordon
-params = user_params
-# JsProxy is not subscriptable — convert to a plain dict
-if not isinstance(params, dict):
-    try:
-        params = dict(params)
-    except Exception:
-        try:
-            params = {k: params[k] for k in params.keys()}
-        except Exception as e:
-            raise RuntimeError("could not convert params to dict: " + str(e))
-# Coerce numbers that came through as JS numbers
+params = json.loads(user_params_json)
+# Ensure all values are plain Python numbers/strings
 params = {k: (float(v) if isinstance(v, (int, float)) else v) for k, v in params.items()}
 ns = {"__name__": "__main__"}
 try:
